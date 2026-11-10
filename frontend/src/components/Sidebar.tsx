@@ -7,147 +7,156 @@ import {
   Camera,
   CheckSquare,
   Wrench,
-  Bot,
+  BarChart3,
   Settings,
-  Activity,
-  Layers,
   HardHat,
-  ShieldCheck,
   Users,
-  Compass
+  Home,
+  FileText,
+  User,
+  History,
+  ClipboardCheck,
+  X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMobile }) => {
   const { role, user } = useAuth();
 
-  // Role-Specific Navigation Definitions
   const getNavItems = () => {
     if (role === 'citizen') {
       return [
-        { to: '/', label: 'Citizen Safety Gateway', icon: <Compass className="w-4 h-4 text-teal-400" /> },
-        { to: '/report', label: 'Report Defect (GeoProof)', icon: <Camera className="w-4 h-4 text-brand-400" />, highlight: true },
-        { to: '/map', label: 'Public Road Map', icon: <Map className="w-4 h-4 text-sky-400" /> },
+        { to: '/', label: 'Home', icon: <Home className="w-4 h-4" /> },
+        { to: '/report', label: 'Report Issue', icon: <Camera className="w-4 h-4" /> },
+        { to: '/map', label: 'Map', icon: <Map className="w-4 h-4" /> },
+        { to: '/my-reports', label: 'My Reports', icon: <FileText className="w-4 h-4" /> },
+        { to: '/profile', label: 'Profile', icon: <User className="w-4 h-4" /> },
       ];
     }
 
     if (role === 'field_inspector') {
       return [
-        { to: '/', label: 'Inspector Field Hub', icon: <HardHat className="w-4 h-4 text-amber-400" /> },
-        { to: '/work-orders', label: 'Assigned Work Orders', icon: <Wrench className="w-4 h-4 text-indigo-400" /> },
-        { to: '/report', label: 'On-Site GeoProof Capture', icon: <Camera className="w-4 h-4 text-brand-400" />, highlight: true },
-        { to: '/map', label: 'Inspection Map', icon: <Map className="w-4 h-4 text-sky-400" /> },
-        { to: '/queue', label: 'All Incident Records', icon: <ListOrdered className="w-4 h-4" /> },
+        { to: '/', label: 'Tasks', icon: <ClipboardCheck className="w-4 h-4" /> },
+        { to: '/map', label: 'Map', icon: <Map className="w-4 h-4" /> },
+        { to: '/work-orders', label: 'Inspections', icon: <Wrench className="w-4 h-4" /> },
+        { to: '/history', label: 'History', icon: <History className="w-4 h-4" /> },
+        { to: '/report', label: 'Field Capture', icon: <Camera className="w-4 h-4" /> },
       ];
     }
 
-    if (role === 'operator') {
-      return [
-        { to: '/reviews', label: 'Review & Triage Centre', icon: <CheckSquare className="w-4 h-4 text-brand-400" />, highlight: true },
-        { to: '/', label: 'Operations Overview', icon: <LayoutDashboard className="w-4 h-4" /> },
-        { to: '/map', label: 'Live Incident Map', icon: <Map className="w-4 h-4" /> },
-        { to: '/queue', label: 'Incident Queue', icon: <ListOrdered className="w-4 h-4" /> },
-        { to: '/work-orders', label: 'Work Orders Dispatch', icon: <Wrench className="w-4 h-4" /> },
-        { to: '/copilot', label: 'AI Operations Copilot', icon: <Bot className="w-4 h-4 text-purple-400" /> },
-      ];
-    }
-
-    // Default: Admin
-    return [
-      { to: '/', label: 'Executive Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
-      { to: '/users', label: 'Team Deployment (10+)', icon: <Users className="w-4 h-4 text-teal-400" />, highlight: true },
-      { to: '/queue', label: 'Incident Queue', icon: <ListOrdered className="w-4 h-4" /> },
-      { to: '/map', label: 'Infrastructure Map', icon: <Map className="w-4 h-4" /> },
-      { to: '/reviews', label: 'Review Centre', icon: <CheckSquare className="w-4 h-4" /> },
+    // Operations Console (operator & admin)
+    const items = [
+      { to: '/', label: 'Overview', icon: <LayoutDashboard className="w-4 h-4" /> },
+      { to: '/queue', label: 'Incidents', icon: <ListOrdered className="w-4 h-4" /> },
+      { to: '/map', label: 'Incident Map', icon: <Map className="w-4 h-4" /> },
+      { to: '/reviews', label: 'Review Queue', icon: <CheckSquare className="w-4 h-4" /> },
       { to: '/work-orders', label: 'Work Orders', icon: <Wrench className="w-4 h-4" /> },
-      { to: '/copilot', label: 'AI Operations Copilot', icon: <Bot className="w-4 h-4 text-purple-400" /> },
-      { to: '/settings', label: 'Settings & Architecture', icon: <Settings className="w-4 h-4" /> },
+      { to: '/analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
+      { to: '/settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
     ];
+    if (role === 'admin') {
+      items.push({ to: '/users', label: 'Team Members', icon: <Users className="w-4 h-4" /> });
+    }
+    return items;
   };
 
   const navItems = getNavItems();
 
-  const getRoleHeader = () => {
-    switch (role) {
-      case 'citizen': return { label: 'CITIZEN PORTAL', color: 'text-teal-400 bg-teal-950/60 border-teal-800' };
-      case 'field_inspector': return { label: 'INSPECTOR FIELD PORTAL', color: 'text-amber-400 bg-amber-950/60 border-amber-800' };
-      case 'operator': return { label: 'OPERATIONS CONTROL ROOM', color: 'text-brand-300 bg-brand-950/60 border-brand-800' };
-      default: return { label: 'ADMINISTRATOR CONSOLE', color: 'text-purple-300 bg-purple-950/60 border-purple-800' };
-    }
-  };
+  const roleWorkspaceLabel =
+    role === 'citizen'
+      ? 'Citizen Portal'
+      : role === 'field_inspector'
+      ? 'Field Inspector'
+      : role === 'admin'
+      ? 'Operations Admin'
+      : 'Operations Console';
 
-  const roleHeader = getRoleHeader();
-
-  return (
-    <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0 z-30">
+  const sidebarContent = (
+    <div className="w-64 bg-[#172B3A] text-white flex flex-col h-full flex-shrink-0">
       {/* Brand Header */}
-      <div className="h-16 flex items-center px-5 border-b border-slate-800 gap-3">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-brand-600 to-teal-400 flex items-center justify-center shadow-lg shadow-brand-500/20">
-          <Activity className="w-5 h-5 text-white animate-pulse" />
-        </div>
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-base tracking-tight text-white">CivicPulse</span>
-            <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/30">
-              AI
+      <div className="h-16 flex items-center justify-between px-5 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <img src="/icon-192.svg" alt="CivicPulse" className="w-8 h-8 rounded-lg border border-white/15" />
+          <div>
+            <span className="font-bold text-base tracking-tight text-white block leading-none">
+              CIVICPULSE
             </span>
+            <p className="text-[11px] text-slate-300 mt-1 leading-none">{roleWorkspaceLabel}</p>
           </div>
-          <p className="text-[10px] text-slate-400 tracking-wider">BENGALURU INFRA CELL</p>
         </div>
+        {onCloseMobile && (
+          <button
+            onClick={onCloseMobile}
+            aria-label="Close navigation menu"
+            className="lg:hidden p-1.5 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
-      {/* Role Indicator Banner in Sidebar */}
-      <div className="px-4 py-2.5 border-b border-slate-800/80 bg-slate-950/60">
-        <div className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-1">Active View:</div>
-        <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border inline-block ${roleHeader.color}`}>
-          {roleHeader.label}
-        </span>
-      </div>
-
-      {/* Navigation */}
+      {/* Navigation Links */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        <div className="px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase text-slate-500">
-          Role-Assigned Workspace
+        <div className="px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase text-slate-400">
+          Navigation
         </div>
-
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === '/'}
-            className={({ isActive }) => `
-              flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition
-              ${isActive
-                ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30 font-semibold'
-                : item.highlight
-                  ? 'bg-slate-800/80 text-brand-300 hover:bg-slate-800 border border-brand-700/40'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }
-            `}
+            onClick={() => onCloseMobile?.()}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                isActive
+                  ? 'bg-[#167C80] text-white font-semibold shadow-sm'
+                  : 'text-slate-300 hover:bg-[#1F384B] hover:text-white'
+              }`
+            }
           >
-            <div className="flex items-center gap-3">
-              {item.icon}
-              <span>{item.label}</span>
-            </div>
-            {item.highlight && (
-              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300">
-                ACTIVE
-              </span>
-            )}
+            {item.icon}
+            <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      {/* Logged in User Tag */}
-      <div className="p-3 border-t border-slate-800 text-[11px] text-slate-400 bg-slate-950/50">
-        <div className="flex items-center justify-between">
-          <span className="font-semibold text-slate-200 truncate">{user?.full_name || 'Guest User'}</span>
-          <span className="text-[10px] font-mono text-slate-400 uppercase">{role}</span>
+      {/* Account Footer */}
+      <div className="p-4 border-t border-white/10 bg-[#12222E]">
+        <div className="flex items-center gap-2.5 text-xs">
+          {role === 'field_inspector' ? (
+            <HardHat className="w-4 h-4 text-[#D99A32] flex-shrink-0" />
+          ) : (
+            <div className="w-2 h-2 rounded-full bg-[#39866A] flex-shrink-0" />
+          )}
+          <div className="min-w-0">
+            <div className="font-semibold text-white truncate">{user?.full_name || 'Guest User'}</div>
+            <div className="text-[11px] text-slate-400 truncate">{user?.organization || 'Bengaluru Roads'}</div>
+          </div>
         </div>
-        <p className="text-[10px] text-slate-500 truncate mt-0.5">
-          {user?.organization || 'BBMP Municipal Infrastructure'}
-        </p>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Permanent Sidebar */}
+      <aside className="hidden lg:flex h-full z-30">{sidebarContent}</aside>
+
+      {/* Mobile Slide-Over Drawer */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 flex lg:hidden">
+          <div
+            className="fixed inset-0 bg-[#172B3A]/60 backdrop-blur-xs"
+            onClick={onCloseMobile}
+          />
+          <div className="relative z-10 h-full shadow-2xl">{sidebarContent}</div>
+        </div>
+      )}
+    </>
   );
 };

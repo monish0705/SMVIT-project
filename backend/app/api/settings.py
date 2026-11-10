@@ -6,9 +6,19 @@ from app.api.deps import get_db, require_roles, get_current_user
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.user import User
+from app.models.incident import Incident
 from app.models.audit_event import AuditEvent
+from app.services.risk_calculator import calculate_incident_risk
 
 router = APIRouter(prefix="/settings", tags=["Settings & Configuration"])
+
+class RiskWeightsPayload(BaseModel):
+    severity: float
+    exposure: float
+    criticality: float
+    hazard: float
+    time_unresolved: float
+    recalculate_open: bool = True
 
 class CreateUserPayload(BaseModel):
     email: str
@@ -119,5 +129,55 @@ def delete_system_user(
     db.delete(user)
     db.commit()
     return {"status": "success", "message": f"User {user.email} removed."}
+
+
+@router.patch("/risk-weights")
+def update_risk_weights(
+    payload: RiskWeightsPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(["admin", "operator"]))
+):
+    """Update the 5-factor risk prioritization formula weights and optionally recalculate open incidents."""
+    total = round(payload.severity + payload.exposure + payload.criticality + payload.hazard + payload.time_unresolved, 4)
+    if abs(total - 1.0) > 0.02:
+        raise HTTPException(status_code=400, detail=f"Weights must sum to 1.00 (received {total}).")
+
+    settings.RISK_WEIGHT_SEVERITY = payload.severity
+    settings.RISK_WEIGHT_EXPOSURE = payload.exposure
+    settings.RISK_WEIGHT_CRITICALITY = payload.criticality
+    settings.RISK_WEIGHT_HAZARD = payload.hazard
+    settings.RISK_WEIGHT_TIME_UNRESOLVED = payload.time_unresolved
+
+    recalculated = 0
+    if payload.recalculate_open:
+        open_incidents = db.query(Incident).filter(Incident.current_status.notin_(["closed", "rejected"])).all()
+        for inc in open_incidents:
+            sev = "medium"
+            if inc.assessments:
+                sev = inc.assessments[0].structured_output.get("visible_severity", "medium")
+            new_risk = calculate_incident_risk(
+                category=inc.category,
+                visible_severity=sev,
+                address_or_location_name=inc.readable_address,
+                created_at=inc.created_at,
+                user_description=inc.description,
+            )
+            inc.risk_score = new_risk["risk_score"]
+            inc.risk_breakdown = new_risk["breakdown"]
+            inc.priority_recommendation = new_risk["recommendation"]
+            recalculated += 1
+
+    db.add(
+        AuditEvent(
+            actor=current_user.full_name,
+            actor_role=current_user.role,
+            action="RISK_WEIGHTS_UPDATED",
+            previous_state=None,
+            new_state="updated",
+            reason=f"Weights set to S={payload.severity}, E={payload.exposure}, C={payload.criticality}, H={payload.hazard}, T={payload.time_unresolved}. Recalculated {recalculated} incidents.",
+        )
+    )
+    db.commit()
+    return {"status": "success", "recalculated": recalculated}
 
 

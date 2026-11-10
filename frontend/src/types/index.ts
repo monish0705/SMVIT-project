@@ -80,10 +80,32 @@ export interface ObservationDetail {
   observed_at: string | null;
   submitted_at: string;
   submitted_by: string;
+  is_repair_evidence?: boolean;
   original_asset_url?: string;
   annotated_asset_url?: string;
   sha256?: string;
   locations: LocationDetail[];
+}
+
+export interface DetectedRegion {
+  label: string;
+  confidence: number;
+  patch_count?: number;
+  bbox: [number, number, number, number];
+}
+
+export interface ResolutionComparison {
+  compared: boolean;
+  scene_similarity_pct: number | null;
+  visual_change_score: number;
+  before_defect_area_pct: number | null;
+  after_defect_area_pct: number;
+  before_cavity_pct: number | null;
+  after_cavity_pct: number;
+  defect_reduction_assessment: string;
+  scene_consistency_note: string;
+  summary: string;
+  requires_human_approval: boolean;
 }
 
 export interface AssessmentDetail {
@@ -98,6 +120,10 @@ export interface AssessmentDetail {
   needs_human_review: boolean;
   confidence_score: number;
   is_fallback: boolean;
+  analysis_source?: string;
+  detected_regions?: DetectedRegion[];
+  vision_metrics?: Record<string, any>;
+  resolution_comparison?: ResolutionComparison | null;
   created_at: string;
 }
 
@@ -169,11 +195,52 @@ export interface IncidentDetailResponse extends IncidentSummary {
   assigned_to?: string;
   closed_at?: string;
   sha256?: string;
+  after_repair_image_url?: string | null;
+  resolution_comparison?: ResolutionComparison | null;
   observations: ObservationDetail[];
   assessments: AssessmentDetail[];
   links: IncidentLinkDetail[];
   work_orders: WorkOrderDetail[];
   audit_events: AuditEventDetail[];
+}
+
+export interface AnalyticsResponse {
+  total_incidents: number;
+  geolocated_incidents: number;
+  recurring_clusters: Array<{
+    cluster_id: string;
+    corridor_label: string;
+    latitude: number;
+    longitude: number;
+    incident_count: number;
+    unresolved_count: number;
+    avg_risk_score: number;
+    max_risk_score: number;
+    categories: string[];
+    incident_numbers: string[];
+  }>;
+  all_corridors: Array<{
+    cluster_id: string;
+    corridor_label: string;
+    latitude: number;
+    longitude: number;
+    incident_count: number;
+    unresolved_count: number;
+    avg_risk_score: number;
+    max_risk_score: number;
+    categories: string[];
+    incident_numbers: string[];
+  }>;
+  divisions: Array<{
+    team: string;
+    total: number;
+    open: number;
+    resolved: number;
+    avg_risk: number;
+  }>;
+  provenance_breakdown: Record<string, number>;
+  sla_breaches_48h_critical: number;
+  avg_resolution_hours: number | null;
 }
 
 export interface IncidentStats {

@@ -3,6 +3,7 @@ import {
   IncidentSummary, 
   IncidentDetailResponse, 
   GeoProofPreview, 
+  AnalyticsResponse,
   UserRole,
   User 
 } from '../types';
@@ -67,6 +68,10 @@ export const api = {
     return request<IncidentStats>('/incidents/stats');
   },
 
+  async getAnalytics() {
+    return request<AnalyticsResponse>('/incidents/analytics');
+  },
+
   async getMapIncidents(category?: string, status?: string, minPriority?: number) {
     const params = new URLSearchParams();
     if (category) params.append('category', category);
@@ -80,6 +85,8 @@ export const api = {
     category?: string;
     status?: string;
     min_priority?: number;
+    assigned_team?: string;
+    submitted_by?: string;
     limit?: number;
     offset?: number;
   }) {
@@ -88,9 +95,19 @@ export const api = {
     if (filters?.category) params.append('category', filters.category);
     if (filters?.status) params.append('status', filters.status);
     if (filters?.min_priority !== undefined) params.append('min_priority', filters.min_priority.toString());
+    if (filters?.assigned_team) params.append('assigned_team', filters.assigned_team);
+    if (filters?.submitted_by) params.append('submitted_by', filters.submitted_by);
     if (filters?.limit) params.append('limit', filters.limit.toString());
     if (filters?.offset) params.append('offset', filters.offset.toString());
     return request<IncidentSummary[]>(`/incidents?${params.toString()}`);
+  },
+
+  async updateIncidentLocation(id: string, data: { latitude: number; longitude: number; accuracy_m?: number; source?: string; reason?: string }) {
+    return request<{ status: string; latitude: number; longitude: number; readable_address: string; current_status: string }>(`/incidents/${id}/location`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
   },
 
   async getIncidentDetail(id: string) {
@@ -283,6 +300,14 @@ export const api = {
   async deleteUser(userId: string) {
     return request<any>(`/settings/users/${userId}`, {
       method: 'DELETE',
+    });
+  },
+
+  async updateRiskWeights(data: { severity: number; exposure: number; criticality: number; hazard: number; time_unresolved: number; recalculate_open?: boolean }) {
+    return request<{ status: string; recalculated: number }>('/settings/risk-weights', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
   }
 };

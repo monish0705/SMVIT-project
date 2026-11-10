@@ -35,6 +35,7 @@ class ObservationDetail(BaseModel):
     observed_at: Optional[datetime] = None
     submitted_at: datetime
     submitted_by: str
+    is_repair_evidence: bool = False
     original_asset_url: Optional[str] = None
     annotated_asset_url: Optional[str] = None
     sha256: Optional[str] = None
@@ -52,6 +53,10 @@ class AssessmentDetail(BaseModel):
     needs_human_review: bool = True
     confidence_score: float = 0.0
     is_fallback: bool = False
+    analysis_source: Optional[str] = None
+    detected_regions: List[Dict[str, Any]] = []
+    vision_metrics: Dict[str, Any] = {}
+    resolution_comparison: Optional[Dict[str, Any]] = None
     created_at: datetime
 
 class IncidentLinkDetail(BaseModel):
@@ -110,7 +115,9 @@ class IncidentDetailResponse(BaseModel):
     # Assets & Evidence
     original_image_url: Optional[str] = None
     annotated_image_url: Optional[str] = None
+    after_repair_image_url: Optional[str] = None
     sha256: Optional[str] = None
+    resolution_comparison: Optional[Dict[str, Any]] = None
     
     # Nested Collections
     observations: List[ObservationDetail] = []
@@ -158,6 +165,13 @@ class WorkOrderCreateRequest(BaseModel):
     due_date: Optional[datetime] = None
     checklist: Optional[List[Dict[str, Any]]] = None
     notes: Optional[str] = None
+
+class LocationUpdateRequest(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy_m: Optional[float] = 15.0
+    source: str = "manual_map_pin"
+    reason: Optional[str] = None
 
 class IncidentStatsResponse(BaseModel):
     total_incidents: int

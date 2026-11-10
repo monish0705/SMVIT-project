@@ -57,17 +57,15 @@ def get_demo_sample_image(sample_type: str, db: Session = Depends(get_db)):
     buf = io.BytesIO()
     # If sample_type == 'pothole_gps', embed EXIF GPS tags!
     if sample_type == "pothole_gps":
-        # Use Pillow Image.Exif
+        from PIL import ExifTags
+        from PIL.TiffImagePlugin import IFDRational
         exif = img.getexif()
-        # GPS IFD
-        gps_ifd = {
-            1: 'N',  # GPSLatitudeRef
-            2: ((12, 1), (58, 1), (234, 10)),  # 12.9731° N
-            3: 'E',  # GPSLongitudeRef
-            4: ((77, 1), (38, 1), (552, 10)),  # 77.6486° E (Indiranagar)
-            29: "2026:11:03 10:42:00"
-        }
-        exif[34853] = gps_ifd
+        gps_ifd = exif.get_ifd(ExifTags.IFD.GPSInfo)
+        gps_ifd[1] = 'N'  # GPSLatitudeRef
+        gps_ifd[2] = (IFDRational(12, 1), IFDRational(58, 1), IFDRational(234, 10))  # 12.9731° N
+        gps_ifd[3] = 'E'  # GPSLongitudeRef
+        gps_ifd[4] = (IFDRational(77, 1), IFDRational(38, 1), IFDRational(552, 10))  # 77.6486° E (Indiranagar)
+        gps_ifd[29] = "2026:11:03 10:42:00"
         exif[306] = "2026:11:03 10:42:00"  # DateTime
         img.save(buf, format="JPEG", quality=95, exif=exif)
     else:

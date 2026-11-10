@@ -16,6 +16,8 @@ from app.models.incident_link import IncidentLink
 from app.models.work_order import WorkOrder
 from app.models.audit_event import AuditEvent
 from app.services.geoproof import process_intake_image
+from app.services.image_analysis import compute_cv_image_analysis
+from app.services.resolution_comparator import compare_before_after_repair
 from app.services.risk_calculator import calculate_incident_risk
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,30 @@ def create_synthetic_road_image(category: str, severity: str, seed: int = 42) ->
             rx = cx + rng.randint(-120, 120)
             ry = cy + rng.randint(-70, 70)
             draw.rectangle([rx, ry, rx + rng.randint(6, 18), ry + rng.randint(6, 18)], fill=(30, 41, 59))
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
+def create_synthetic_repaired_road_image(seed: int = 42) -> bytes:
+    """Generate a synthetic patched/restored asphalt surface for before/after repair comparison."""
+    rng = random.Random(seed + 999)
+    w, h = 800, 600
+    base_color = (rng.randint(52, 65), rng.randint(60, 72), rng.randint(68, 82))
+    img = Image.new("RGB", (w, h), base_color)
+    draw = ImageDraw.Draw(img)
+
+    for _ in range(2500):
+        nx = rng.randint(0, w - 1)
+        ny = rng.randint(0, h - 1)
+        gray_tint = rng.randint(45, 78)
+        draw.point((nx, ny), fill=(gray_tint, gray_tint, gray_tint))
+
+    draw.line([(0, h // 2 - 80), (w, h // 2 - 80)], fill=(234, 179, 8, 170), width=8)
+    # Neat compacted hot-mix patch rectangle at former defect site
+    cx, cy = w // 2, h // 2
+    draw.rounded_rectangle([cx - 105, cy - 75, cx + 105, cy + 75], radius=12, fill=(58, 66, 76), outline=(82, 92, 104), width=3)
 
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=90)
@@ -414,7 +440,86 @@ def seed_database():
     db = SessionLocal()
 
     try:
-        if db.query(User).count() > 0 and db.query(Incident).count() >= 15:
+        # Backfill CV metrics and repair evidence on existing synthetic records if needed
+        existing_incs = db.query(Incident).all()
+        if db.query(User).count() > 0 and len(existing_incs) >= 15:
+            scenario_map = {s["num"]: s for s in DEMO_SCENARIOS}
+            updated_existing = False
+            for inc in existing_incs:
+                sc = scenario_map.get(inc.incident_number)
+                if not sc:
+                    continue
+                if inc.assessments and not inc.assessments[0].structured_output.get("vision_metrics"):
+                    img_bytes = create_synthetic_road_image(sc["category"], sc["severity"], sc["seed"])
+                    cv_res = compute_cv_image_analysis(img_bytes, sc["desc"])
+                    out = dict(inc.assessments[0].structured_output or {})
+                    out["detected_regions"] = cv_res.get("detected_regions", [])
+                    out["vision_metrics"] = cv_res.get("vision_metrics", {})
+                    out["analysis_source"] = cv_res.get("analysis_source")
+                    inc.assessments[0].structured_output = out
+                    updated_existing = True
+                if (sc.get("has_repair_claim") or sc.get("closed")) and not any(a.is_repair_evidence for a in inc.evidence_assets):
+                    before_bytes = create_synthetic_road_image(sc["category"], sc["severity"], sc["seed"])
+                    after_bytes = create_synthetic_repaired_road_image(sc["seed"])
+                    rep_intake = process_intake_image(
+                        file_bytes=after_bytes,
+                        incident_number=f"{sc['num']}-REPAIR",
+                        readable_address=sc["addr"],
+                        latitude=sc["lat"],
+                        longitude=sc["lon"],
+                        location_source="inspector_confirmed" if sc.get("closed") else "contractor_submission",
+                        accuracy_m=6.0,
+                        timestamp=inc.updated_at or now if 'now' in locals() else datetime.now(timezone.utc),
+                        time_label="Repaired",
+                        verification_status="Resolution Verified" if sc.get("closed") else "Pending Resolution Review",
+                    )
+                    rep_obs = Observation(
+                        incident_id=inc.id,
+                        observation_number=f"REP-REPAIR-{sc['num'][-4:]}",
+                        source_type="contractor_repair_proof",
+                        capture_mode="camera",
+                        description="Post-repair compacted asphalt patching photograph.",
+                        submitted_by=SYNTHETIC_AUTHOR,
+                        processing_status="completed",
+                    )
+                    db.add(rep_obs)
+                    db.flush()
+                    db.add(EvidenceAsset(
+                        observation_id=rep_obs.id,
+                        incident_id=inc.id,
+                        original_path=rep_intake["original_path"],
+                        annotated_path=rep_intake["annotated_path"],
+                        thumbnail_path=rep_intake["thumbnail_path"],
+                        sha256=rep_intake["sha256"],
+                        perceptual_hash=rep_intake["perceptual_hash"],
+                        mime_type="image/jpeg",
+                        width=rep_intake["width"],
+                        height=rep_intake["height"],
+                        file_size=rep_intake["file_size"],
+                        is_repair_evidence=True,
+                    ))
+                    comp = compare_before_after_repair(before_bytes, after_bytes)
+                    db.add(Assessment(
+                        observation_id=rep_obs.id,
+                        incident_id=inc.id,
+                        model_name="CivicPulse-BeforeAfter-Comparator",
+                        model_version="1.0.0",
+                        structured_output={
+                            "category": inc.category,
+                            "visible_severity": "low",
+                            "image_quality": "good",
+                            "visual_evidence": comp["summary"],
+                            "uncertainties": [comp["scene_consistency_note"]],
+                            "needs_human_review": True,
+                            "confidence_score": round(comp["visual_change_score"] / 100.0, 2),
+                            "analysis_source": "before_after_cv_comparison",
+                            "resolution_comparison": comp,
+                        },
+                        is_fallback=False,
+                    ))
+                    updated_existing = True
+            if updated_existing:
+                db.commit()
             return
 
         users = [
@@ -566,25 +671,95 @@ def seed_database():
                 )
             )
 
+            cv_res = compute_cv_image_analysis(img_bytes, s["desc"])
             db.add(
                 Assessment(
                     observation_id=obs.id,
                     incident_id=inc.id,
-                    model_name="CivicPulse-Synthetic-Benchmark",
+                    model_name="CivicPulse-Vision-CV-1.0",
                     model_version="1.0.0",
                     structured_output={
                         "category": s["category"],
                         "visible_severity": s["severity"],
-                        "image_quality": "good",
-                        "visual_evidence": f"Pavement defect identified at {s['addr']}",
-                        "uncertainties": ["Synthetic demonstration record"],
+                        "image_quality": cv_res.get("image_quality", "good"),
+                        "visual_evidence": cv_res.get("visual_evidence", f"Pavement defect identified at {s['addr']}"),
+                        "uncertainties": ["Synthetic demonstration record"] + cv_res.get("uncertainties", [])[:2],
                         "needs_human_review": True,
-                        "confidence_score": 0.88,
+                        "confidence_score": cv_res.get("confidence_score", 0.82),
+                        "detected_regions": cv_res.get("detected_regions", []),
+                        "vision_metrics": cv_res.get("vision_metrics", {}),
+                        "analysis_source": cv_res.get("analysis_source", "vision_cv_patch_analyzer"),
                     },
-                    is_fallback=True,
+                    is_fallback=False,
                     created_at=created_time,
                 )
             )
+
+            if s.get("has_repair_claim") or s.get("closed"):
+                after_bytes = create_synthetic_repaired_road_image(s["seed"])
+                rep_intake = process_intake_image(
+                    file_bytes=after_bytes,
+                    incident_number=f"{s['num']}-REPAIR",
+                    readable_address=s["addr"],
+                    latitude=s["lat"],
+                    longitude=s["lon"],
+                    location_source="inspector_confirmed" if s.get("closed") else "contractor_submission",
+                    accuracy_m=6.0,
+                    timestamp=created_time + timedelta(days=1),
+                    time_label="Repaired",
+                    verification_status="Resolution Verified" if s.get("closed") else "Pending Resolution Review",
+                )
+                rep_obs = Observation(
+                    incident_id=inc.id,
+                    observation_number=f"REP-REPAIR-{s['num'][-4:]}",
+                    source_type="contractor_repair_proof",
+                    capture_mode="camera",
+                    description="Post-repair compacted asphalt patching photograph.",
+                    submitted_at=created_time + timedelta(days=1),
+                    submitted_by=SYNTHETIC_AUTHOR,
+                    processing_status="completed",
+                )
+                db.add(rep_obs)
+                db.flush()
+                db.add(
+                    EvidenceAsset(
+                        observation_id=rep_obs.id,
+                        incident_id=inc.id,
+                        original_path=rep_intake["original_path"],
+                        annotated_path=rep_intake["annotated_path"],
+                        thumbnail_path=rep_intake["thumbnail_path"],
+                        sha256=rep_intake["sha256"],
+                        perceptual_hash=rep_intake["perceptual_hash"],
+                        mime_type="image/jpeg",
+                        width=rep_intake["width"],
+                        height=rep_intake["height"],
+                        file_size=rep_intake["file_size"],
+                        is_repair_evidence=True,
+                        created_at=created_time + timedelta(days=1),
+                    )
+                )
+                comp = compare_before_after_repair(img_bytes, after_bytes)
+                db.add(
+                    Assessment(
+                        observation_id=rep_obs.id,
+                        incident_id=inc.id,
+                        model_name="CivicPulse-BeforeAfter-Comparator",
+                        model_version="1.0.0",
+                        structured_output={
+                            "category": inc.category,
+                            "visible_severity": "low",
+                            "image_quality": "good",
+                            "visual_evidence": comp["summary"],
+                            "uncertainties": [comp["scene_consistency_note"]],
+                            "needs_human_review": True,
+                            "confidence_score": round(comp["visual_change_score"] / 100.0, 2),
+                            "analysis_source": "before_after_cv_comparison",
+                            "resolution_comparison": comp,
+                        },
+                        is_fallback=False,
+                        created_at=created_time + timedelta(days=1),
+                    )
+                )
 
             if s["status"] in ["assigned", "in_progress", "repair_claimed", "resolution_pending_review", "closed"]:
                 db.add(

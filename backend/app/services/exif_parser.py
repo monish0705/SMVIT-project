@@ -95,7 +95,7 @@ def extract_exif_metadata(image_path_or_file) -> ExifMetadata:
             if gps_ifd:
                 gps_tags = {}
                 for key, val in gps_ifd.items():
-                    name = ExifTags.GPSTags.get(key, str(key))
+                    name = ExifTags.GPSTAGS.get(key, str(key))
                     gps_tags[name] = val
 
                 lat_val = gps_tags.get("GPSLatitude")

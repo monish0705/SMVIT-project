@@ -41,9 +41,11 @@ class Settings(BaseSettings):
     ANNOTATED_PATH: str = str(ANNOTATED_DIR)
     THUMBNAILS_PATH: str = str(THUMBNAILS_DIR)
     
-    # Gemini AI
+    # Vision & Gemini AI
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    ROAD_DAMAGE_DETECTOR_URL: str = os.getenv("ROAD_DAMAGE_DETECTOR_URL", "")
+    ROAD_DAMAGE_DETECTOR_TOKEN: str = os.getenv("ROAD_DAMAGE_DETECTOR_TOKEN", "")
     
     # Geocoding
     NOMINATIM_USER_AGENT: str = os.getenv("NOMINATIM_USER_AGENT", "CivicPulse-AI-Platform/1.0 (infrastructure-intelligence)")

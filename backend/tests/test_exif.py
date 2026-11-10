@@ -26,3 +26,27 @@ def test_missing_exif():
     assert meta.latitude is None
     assert meta.longitude is None
 
+
+def test_embedded_exif_gps_extraction():
+    from PIL import ExifTags
+    from PIL.TiffImagePlugin import IFDRational
+
+    img = Image.new("RGB", (200, 150), color=(90, 95, 100))
+    exif = img.getexif()
+    gps = exif.get_ifd(ExifTags.IFD.GPSInfo)
+    gps[1] = "N"
+    gps[2] = (IFDRational(12, 1), IFDRational(58, 1), IFDRational(234, 10))
+    gps[3] = "E"
+    gps[4] = (IFDRational(77, 1), IFDRational(38, 1), IFDRational(552, 10))
+    exif[306] = "2026:11:03 10:42:00"
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", exif=exif)
+    buf.seek(0)
+
+    meta = extract_exif_metadata(buf)
+    assert meta.has_exif is True
+    assert round(meta.latitude, 4) == 12.9732
+    assert round(meta.longitude, 4) == 77.6487
+    assert meta.claimed_capture_time is not None
+

@@ -3,7 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
-from app.core.bootstrap import DEMO_SCENARIOS, SYNTHETIC_AUTHOR, create_synthetic_road_image
+from app.core.bootstrap import (
+    DEMO_SCENARIOS,
+    SYNTHETIC_AUTHOR,
+    create_synthetic_road_image,
+    create_synthetic_repaired_road_image,
+)
 from app.models.evidence_asset import EvidenceAsset
 from app.models.incident import Incident
 from app.models.observation import Observation
@@ -25,18 +30,28 @@ def _ensure_synthetic_asset_on_disk(asset: EvidenceAsset, db: Session) -> None:
     severity = scenario["severity"] if scenario else "medium"
     seed = scenario["seed"] if scenario else 42
 
-    img_bytes = create_synthetic_road_image(inc.category, severity, seed)
+    if asset.is_repair_evidence:
+        img_bytes = create_synthetic_repaired_road_image(seed)
+        inc_label = f"{inc.incident_number}-REPAIR"
+        time_label = "Repaired"
+        ver_status = "Resolution Verified" if inc.current_status == "closed" else "Pending Resolution Review"
+    else:
+        img_bytes = create_synthetic_road_image(inc.category, severity, seed)
+        inc_label = inc.incident_number
+        time_label = "Captured" if inc.location_source == "photo_exif" else "Reported"
+        ver_status = "Field Verified" if inc.current_status in ["field_verified", "resolution_verified", "closed"] else "Unverified"
+
     intake = process_intake_image(
         file_bytes=img_bytes,
-        incident_number=inc.incident_number,
+        incident_number=inc_label,
         readable_address=inc.readable_address,
         latitude=inc.latitude,
         longitude=inc.longitude,
         location_source=inc.location_source,
         accuracy_m=inc.location_accuracy_m,
         timestamp=inc.created_at,
-        time_label="Captured" if inc.location_source == "photo_exif" else "Reported",
-        verification_status="Field Verified" if inc.current_status in ["field_verified", "resolution_verified", "closed"] else "Unverified",
+        time_label=time_label,
+        verification_status=ver_status,
     )
     asset.original_path = intake["original_path"]
     asset.annotated_path = intake["annotated_path"]

@@ -1,17 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  ShieldCheck, 
-  Wrench, 
-  Camera, 
-  MapPin, 
-  CheckCircle2, 
-  AlertCircle, 
-  ArrowRight,
+import {
+  Camera,
+  MapPin,
+  CheckCircle2,
   ClipboardList,
   HardHat,
-  Clock,
-  Ruler
+  Ruler,
+  FileCheck2,
+  AlertCircle
 } from 'lucide-react';
 import { api } from '../services/api';
 import { IncidentSummary, WorkOrderDetail } from '../types';
@@ -26,8 +23,9 @@ export const InspectorHub: React.FC = () => {
   const [pendingInspections, setPendingInspections] = useState<IncidentSummary[]>([]);
   const [assignedWorkOrders, setAssignedWorkOrders] = useState<WorkOrderDetail[]>([]);
   const [loading, setLoading] = useState(true);
+  const [bannerMsg, setBannerMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // Field Verification Modal State
+  // Field Verification Modal
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<IncidentSummary | null>(null);
   const [measurementDepth, setMeasurementDepth] = useState('8 cm');
@@ -35,17 +33,23 @@ export const InspectorHub: React.FC = () => {
   const [inspectorNotes, setInspectorNotes] = useState('');
   const [submittingVerification, setSubmittingVerification] = useState(false);
 
+  // Quick Repair Evidence Modal
+  const [repairModalOpen, setRepairModalOpen] = useState(false);
+  const [repairTarget, setRepairTarget] = useState<IncidentSummary | null>(null);
+  const [repairImage, setRepairImage] = useState<File | null>(null);
+  const [repairNotes, setRepairNotes] = useState('');
+
   const loadInspectorData = () => {
     setLoading(true);
     Promise.all([
-      api.getIncidents({ status: 'candidate', limit: 20 }),
+      api.getIncidents({ status: 'candidate,needs_review,corroborated,assigned,in_progress', limit: 30 }),
       api.getWorkOrders()
     ])
       .then(([incs, wos]) => {
         setPendingInspections(incs);
         setAssignedWorkOrders(wos);
       })
-      .catch(err => console.error('Failed to load inspector hub:', err))
+      .catch(err => setBannerMsg({ type: 'err', text: err.message || 'Failed to load inspection tasks.' }))
       .finally(() => setLoading(false));
   };
 
@@ -61,150 +65,197 @@ export const InspectorHub: React.FC = () => {
     try {
       await api.reviewIncident(selectedIncident.id, {
         decision: 'verify_field',
-        reason: `Physical on-site inspection confirmed defect dimensions (Depth: ${measurementDepth}, Width: ${measurementWidth}).`,
+        reason: `On-site field inspection confirmed defect (Depth: ${measurementDepth}, Width: ${measurementWidth}).`,
         notes: inspectorNotes
       });
       setVerifyModalOpen(false);
+      setBannerMsg({ type: 'ok', text: `${selectedIncident.incident_number} marked Field Verified.` });
       setSelectedIncident(null);
       setInspectorNotes('');
       loadInspectorData();
     } catch (err: any) {
-      alert(`Field verification failed: ${err.message}`);
+      setBannerMsg({ type: 'err', text: `Field verification failed: ${err.message}` });
+    } finally {
+      setSubmittingVerification(false);
+    }
+  };
+
+  const handleQuickRepairSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!repairTarget || !repairImage) return;
+    setSubmittingVerification(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', repairImage);
+      formData.append('notes', repairNotes);
+      formData.append('repair_team', user?.organization || 'Field Engineering Team');
+      const res = await api.uploadResolutionEvidence(repairTarget.id, formData);
+      setRepairModalOpen(false);
+      setRepairImage(null);
+      setRepairNotes('');
+      setBannerMsg({
+        type: 'ok',
+        text: `After-repair photo uploaded for ${repairTarget.incident_number}. ${res.resolution_comparison?.summary || 'Moved to pending resolution review.'}`
+      });
+      loadInspectorData();
+    } catch (err: any) {
+      setBannerMsg({ type: 'err', text: `Upload failed: ${err.message}` });
     } finally {
       setSubmittingVerification(false);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
-      {/* Inspector Hero Banner */}
-      <div className="rounded-2xl bg-gradient-to-r from-amber-950/50 via-slate-900 to-slate-900 border border-amber-700/40 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0 shadow-md">
-            <HardHat className="w-8 h-8" />
+    <div className="space-y-5 max-w-6xl mx-auto">
+      {/* Header Card */}
+      <div className="bg-white rounded-2xl border border-[#DDE4EC] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-xl bg-[#172B3A] text-white flex items-center justify-center flex-shrink-0">
+            <HardHat className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white tracking-tight">Field Inspector Command Hub</h1>
-              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                ON-SITE DISPATCH
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 mt-1">
-              Inspector: <strong>{user?.full_name || 'Ramesh Babu'}</strong> · Division: <strong>{user?.organization || 'BBMP Yelahanka Division'}</strong>
+            <h1 className="text-lg sm:text-xl font-bold text-[#263746]">Field Inspector Tasks</h1>
+            <p className="text-xs text-[#5A6B7C] mt-0.5">
+              {user?.full_name || 'Ramesh Babu'} &middot; {user?.organization || 'BBMP Field Division'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => navigate('/report')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-lg shadow-amber-600/20 transition"
+            onClick={() => navigate('/report?mode=camera')}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#167C80] hover:bg-[#116265] text-white font-semibold text-xs transition"
           >
             <Camera className="w-4 h-4" />
-            <span>On-Site GeoProof Capture</span>
+            <span>Capture Field Photo</span>
+          </button>
+          <button
+            onClick={() => navigate('/work-orders')}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#F6F8FA] hover:bg-slate-200/60 text-[#263746] border border-[#DDE4EC] font-semibold text-xs transition"
+          >
+            <span>Checklists ({assignedWorkOrders.length})</span>
           </button>
         </div>
       </div>
 
-      {/* Quick KPI Strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 font-medium">Awaiting Field Check</span>
-          <div className="text-2xl font-bold text-amber-400 mt-1">{pendingInspections.length}</div>
-          <span className="text-[11px] text-slate-500 mt-0.5 block">Requires on-site physical check</span>
+      {bannerMsg && (
+        <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2 ${
+          bannerMsg.type === 'ok'
+            ? 'bg-emerald-50 border-emerald-200 text-[#39866A]'
+            : 'bg-red-50 border-red-200 text-[#DC4C4C]'
+        }`}>
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>{bannerMsg.text}</span>
         </div>
+      )}
 
-        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 font-medium">Active Work Orders</span>
-          <div className="text-2xl font-bold text-indigo-400 mt-1">{assignedWorkOrders.length}</div>
-          <span className="text-[11px] text-slate-500 mt-0.5 block">Contractor repair tracking</span>
+      {/* KPI Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-white p-4 rounded-xl border border-[#DDE4EC]">
+          <span className="text-xs text-[#5A6B7C] font-medium">Actionable Tasks</span>
+          <div className="text-2xl font-bold text-[#263746] mt-1 tabular-nums">{pendingInspections.length}</div>
+          <span className="text-[11px] text-[#5A6B7C]">Awaiting check or repair</span>
         </div>
-
-        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 font-medium">Repair Audits Pending</span>
-          <div className="text-2xl font-bold text-cyan-400 mt-1">
+        <div className="bg-white p-4 rounded-xl border border-[#DDE4EC]">
+          <span className="text-xs text-[#5A6B7C] font-medium">High Risk (&ge;75)</span>
+          <div className="text-2xl font-bold text-[#DC4C4C] mt-1 tabular-nums">
+            {pendingInspections.filter(i => i.risk_score >= 75).length}
+          </div>
+          <span className="text-[11px] text-[#5A6B7C]">Urgent physical check</span>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-[#DDE4EC]">
+          <span className="text-xs text-[#5A6B7C] font-medium">Active Work Orders</span>
+          <div className="text-2xl font-bold text-[#3979B7] mt-1 tabular-nums">{assignedWorkOrders.length}</div>
+          <span className="text-[11px] text-[#5A6B7C]">Crew checklists</span>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-[#DDE4EC]">
+          <span className="text-xs text-[#5A6B7C] font-medium">Pending Audits</span>
+          <div className="text-2xl font-bold text-[#167C80] mt-1 tabular-nums">
             {assignedWorkOrders.filter(w => w.status === 'repair_claimed').length}
           </div>
-          <span className="text-[11px] text-slate-500 mt-0.5 block">After-photos needing sign-off</span>
-        </div>
-
-        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800">
-          <span className="text-xs text-slate-400 font-medium">GPS Accuracy Standard</span>
-          <div className="text-2xl font-bold text-emerald-400 mt-1">&plusmn;5m</div>
-          <span className="text-[11px] text-slate-500 mt-0.5 block">Survey-grade validation</span>
+          <span className="text-[11px] text-[#5A6B7C]">After-repair check</span>
         </div>
       </div>
 
-      {/* Priority Defect Inspection Queue */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-sm">
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+      {/* Assigned Road Defects Queue */}
+      <div className="bg-white rounded-xl border border-[#DDE4EC] overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-[#DDE4EC] flex items-center justify-between bg-[#F6F8FA]">
           <div className="flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-amber-400" />
-            <h3 className="text-sm font-semibold text-white">
-              Assigned Road Defects for Physical Verification
-            </h3>
+            <ClipboardList className="w-4 h-4 text-[#167C80]" />
+            <h2 className="text-sm font-semibold text-[#263746]">Field Inspection &amp; Repair Queue</h2>
           </div>
-          <span className="text-xs text-slate-400">Prioritized by Risk Score</span>
+          <span className="text-xs text-[#5A6B7C]">Sorted by Priority</span>
         </div>
 
-        <div className="divide-y divide-slate-800/80">
+        <div className="divide-y divide-[#DDE4EC]">
           {loading ? (
-            <div className="p-8 text-center text-slate-400 text-xs">Loading inspection assignments...</div>
+            <div className="p-8 text-center text-xs text-[#5A6B7C]">Loading field assignments...</div>
           ) : pendingInspections.length === 0 ? (
-            <div className="p-8 text-center text-slate-500 text-xs">No pending inspections in this zone.</div>
+            <div className="p-8 text-center text-xs text-[#5A6B7C]">No pending field inspections.</div>
           ) : (
-            pendingInspections.map(inc => (
+            pendingInspections.map((inc) => (
               <div
                 key={inc.id}
-                className="p-4 hover:bg-slate-850/60 transition flex flex-col md:flex-row md:items-center justify-between gap-4"
+                className="p-4 hover:bg-[#F6F8FA] transition flex flex-col md:flex-row md:items-center justify-between gap-4"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-3 min-w-0">
                   {inc.annotated_image_url || inc.original_image_url ? (
                     <img
                       src={inc.annotated_image_url || inc.original_image_url}
                       alt={inc.incident_number}
-                      className="w-16 h-14 rounded-lg object-cover bg-slate-800 border border-slate-700 flex-shrink-0 cursor-pointer"
                       onClick={() => navigate(`/incidents/${inc.id}`)}
+                      className="w-16 h-16 rounded-lg object-cover border border-[#DDE4EC] flex-shrink-0 cursor-pointer"
                     />
                   ) : (
-                    <div className="w-16 h-14 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs text-slate-500 flex-shrink-0">
-                      Img
+                    <div className="w-16 h-16 rounded-lg bg-slate-100 border border-[#DDE4EC] flex items-center justify-center text-xs text-[#5A6B7C] flex-shrink-0">
+                      No Img
                     </div>
                   )}
 
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-slate-100">{inc.incident_number}</span>
-                      <span className="text-xs text-slate-400 capitalize font-medium">· {inc.category.replace(/_/g, ' ')}</span>
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-sm text-[#263746]">{inc.incident_number}</span>
                       <StatusBadge status={inc.current_status} size="sm" />
                       <PriorityBadge score={inc.risk_score} size="sm" />
                     </div>
-                    <h4 className="text-xs text-slate-200 font-semibold">{inc.title}</h4>
-                    <p className="text-[11px] text-slate-400 flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{inc.readable_address || 'Bengaluru Road Network'}</span>
+                    <h3 className="text-xs font-semibold text-[#263746] line-clamp-1">{inc.title}</h3>
+                    <p className="text-[11px] text-[#5A6B7C] flex items-center gap-1 truncate">
+                      <MapPin className="w-3.5 h-3.5 text-[#167C80] flex-shrink-0" />
+                      <span className="truncate">{inc.readable_address || 'Bengaluru'}</span>
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end md:self-center flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                  {['candidate', 'needs_review', 'corroborated'].includes(inc.current_status) && (
+                    <button
+                      onClick={() => {
+                        setSelectedIncident(inc);
+                        setVerifyModalOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#167C80] hover:bg-[#116265] text-white font-semibold text-xs transition"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Verify On Site</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
-                      setSelectedIncident(inc);
-                      setVerifyModalOpen(true);
+                      setRepairTarget(inc);
+                      setRepairModalOpen(true);
                     }}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs shadow transition"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#3979B7] hover:bg-blue-700 text-white font-semibold text-xs transition"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Perform Field Verification</span>
+                    <FileCheck2 className="w-3.5 h-3.5" />
+                    <span>Upload After-Photo</span>
                   </button>
 
                   <button
                     onClick={() => navigate(`/incidents/${inc.id}`)}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition"
+                    className="px-3 py-2 rounded-lg bg-[#F6F8FA] hover:bg-slate-200/60 text-[#263746] border border-[#DDE4EC] font-medium text-xs transition"
                   >
-                    Dossier
+                    Details
                   </button>
                 </div>
               </div>
@@ -213,77 +264,123 @@ export const InspectorHub: React.FC = () => {
         </div>
       </div>
 
-      {/* Field Inspection Dialog Modal */}
+      {/* Physical Verification Modal */}
       {verifyModalOpen && selectedIncident && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <form onSubmit={handleFieldVerifySubmit} className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center gap-2 text-amber-400">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#172B3A]/70 backdrop-blur-sm">
+          <form onSubmit={handleFieldVerifySubmit} className="bg-white border border-[#DDE4EC] rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-2 text-[#167C80]">
               <Ruler className="w-5 h-5" />
-              <h3 className="text-base font-bold text-white">
-                Record Physical Field Verification — {selectedIncident.incident_number}
+              <h3 className="text-base font-bold text-[#263746]">
+                Field Verification — {selectedIncident.incident_number}
               </h3>
             </div>
-            <p className="text-xs text-slate-400">
-              Certify that you have physically inspected this road defect on site and verified its geographic location and pavement condition.
+            <p className="text-xs text-[#5A6B7C]">
+              Record physical measurements and surface condition observed on site.
             </p>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300">Measured Depth</label>
+                <label className="text-xs font-semibold text-[#263746]">Measured Depth</label>
                 <input
                   type="text"
                   required
                   value={measurementDepth}
-                  onChange={e => setMeasurementDepth(e.target.value)}
-                  placeholder="e.g. 10 cm"
-                  className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg p-2.5"
+                  onChange={(e) => setMeasurementDepth(e.target.value)}
+                  className="w-full bg-[#F6F8FA] border border-[#DDE4EC] text-xs text-[#263746] rounded-lg p-2.5"
                 />
               </div>
-
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300">Approx. Surface Width</label>
+                <label className="text-xs font-semibold text-[#263746]">Surface Width</label>
                 <input
                   type="text"
                   required
                   value={measurementWidth}
-                  onChange={e => setMeasurementWidth(e.target.value)}
-                  placeholder="e.g. 75 cm"
-                  className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg p-2.5"
+                  onChange={(e) => setMeasurementWidth(e.target.value)}
+                  className="w-full bg-[#F6F8FA] border border-[#DDE4EC] text-xs text-[#263746] rounded-lg p-2.5"
                 />
               </div>
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300">Inspector Observations & Repair Specs</label>
+              <label className="text-xs font-semibold text-[#263746]">Inspection Findings &amp; Repair Spec</label>
               <textarea
                 rows={3}
                 required
                 value={inspectorNotes}
-                onChange={e => setInspectorNotes(e.target.value)}
-                placeholder="e.g. Edge crumbling present along center carriageway. Recommend 50mm hot-mix asphalt patching with prior tack coat application."
-                className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg p-2.5"
+                onChange={(e) => setInspectorNotes(e.target.value)}
+                placeholder="e.g. Base layer exposed near bus stop curb; requires 50mm hot-mix asphalt patching."
+                className="w-full bg-[#F6F8FA] border border-[#DDE4EC] text-xs text-[#263746] rounded-lg p-2.5"
               />
             </div>
 
-            <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/50 text-xs text-emerald-300 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span>Transitions incident status to <strong>field_verified</strong> and records immutable audit credentials.</span>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#DDE4EC]">
               <button
                 type="button"
                 onClick={() => setVerifyModalOpen(false)}
-                className="px-4 py-2 rounded-lg bg-slate-800 text-xs text-slate-300"
+                className="px-4 py-2 rounded-lg bg-[#F6F8FA] border border-[#DDE4EC] text-xs text-[#263746] font-medium"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submittingVerification}
-                className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow"
+                className="px-4 py-2 rounded-lg bg-[#167C80] hover:bg-[#116265] text-white text-xs font-semibold"
               >
-                {submittingVerification ? 'Certifying...' : 'Certify Field Verification'}
+                {submittingVerification ? 'Saving...' : 'Confirm Field Verification'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Upload After-Repair Evidence Modal */}
+      {repairModalOpen && repairTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#172B3A]/70 backdrop-blur-sm">
+          <form onSubmit={handleQuickRepairSubmit} className="bg-white border border-[#DDE4EC] rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-2 text-[#3979B7]">
+              <FileCheck2 className="w-5 h-5" />
+              <h3 className="text-base font-bold text-[#263746]">
+                Upload After-Repair Photo — {repairTarget.incident_number}
+              </h3>
+            </div>
+            <p className="text-xs text-[#5A6B7C]">
+              Photo is compared automatically against the original defect image and routed to supervisor resolution review before closure.
+            </p>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-[#263746]">After-Repair Photograph</label>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                required
+                onChange={(e) => setRepairImage(e.target.files?.[0] || null)}
+                className="w-full bg-[#F6F8FA] border border-[#DDE4EC] text-xs text-[#263746] rounded-lg p-2"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-[#263746]">Repair Materials &amp; Notes</label>
+              <textarea
+                rows={2}
+                value={repairNotes}
+                onChange={(e) => setRepairNotes(e.target.value)}
+                placeholder="e.g. Hot mix asphalt compacted and leveled."
+                className="w-full bg-[#F6F8FA] border border-[#DDE4EC] text-xs text-[#263746] rounded-lg p-2.5"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#DDE4EC]">
+              <button
+                type="button"
+                onClick={() => setRepairModalOpen(false)}
+                className="px-4 py-2 rounded-lg bg-[#F6F8FA] border border-[#DDE4EC] text-xs text-[#263746]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submittingVerification || !repairImage}
+                className="px-4 py-2 rounded-lg bg-[#3979B7] hover:bg-blue-700 text-white text-xs font-semibold"
+              >
+                {submittingVerification ? 'Comparing...' : 'Submit Repair Proof'}
               </button>
             </div>
           </form>
@@ -292,4 +389,3 @@ export const InspectorHub: React.FC = () => {
     </div>
   );
 };
-

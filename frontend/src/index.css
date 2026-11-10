@@ -3,25 +3,29 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-slate-950 text-slate-100 min-h-screen overflow-x-hidden;
+  html, body {
+    background-color: #F6F8FA;
+    color: #263746;
+    min-height: 100%;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* Custom scrollbars */
+/* Clean enterprise scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b1120;
+  background: #F6F8FA;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #CBD5E1;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #94A3B8;
 }
 
 /* Fix Leaflet map z-index inside dialogs/layers */
@@ -32,3 +36,7 @@
   z-index: 10;
 }
 
+/* Safe area padding helper for mobile bottom nav bars */
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
