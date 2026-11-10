@@ -1,8 +1,9 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
+from app.core.bootstrap import ensure_initialized
 import app.models  # ensure all models are registered
 from app.api import auth, reports, incidents, evidence, location, copilot, audit, work_orders, settings as settings_api
 
@@ -20,6 +21,12 @@ app = FastAPI(
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc"
 )
+
+# Ensure demo seed exists on cold starts / fresh ephemeral or empty cloud databases
+@app.middleware("http")
+async def bootstrap_database_middleware(request: Request, call_next):
+    ensure_initialized()
+    return await call_next(request)
 
 # CORS configuration
 app.add_middleware(
@@ -50,6 +57,7 @@ def health_check():
         "database": "connected"
     }
 
+@app.get("/api", tags=["Root"])
 @app.get("/", tags=["Root"])
 def root_info():
     return {

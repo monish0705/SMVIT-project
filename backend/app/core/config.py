@@ -3,7 +3,8 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-STORAGE_DIR = BASE_DIR / "storage"
+IS_VERCEL = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "/tmp/civicpulse_storage")) if IS_VERCEL else (BASE_DIR / "storage")
 ORIGINALS_DIR = STORAGE_DIR / "originals"
 ANNOTATED_DIR = STORAGE_DIR / "annotated"
 THUMBNAILS_DIR = STORAGE_DIR / "thumbnails"
@@ -11,6 +12,18 @@ THUMBNAILS_DIR = STORAGE_DIR / "thumbnails"
 ORIGINALS_DIR.mkdir(parents=True, exist_ok=True)
 ANNOTATED_DIR.mkdir(parents=True, exist_ok=True)
 THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_database_url() -> str:
+    env_url = os.getenv("DATABASE_URL")
+    if env_url:
+        if env_url.startswith("postgres://"):
+            return env_url.replace("postgres://", "postgresql://", 1)
+        return env_url
+    if IS_VERCEL:
+        return "sqlite:////tmp/civicpulse.db"
+    return f"sqlite:///{BASE_DIR}/civicpulse.db"
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "CivicPulse AI"
@@ -20,7 +33,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days for demo
     
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/civicpulse.db")
+    DATABASE_URL: str = _resolve_database_url()
     
     # Storage
     STORAGE_PATH: str = str(STORAGE_DIR)

@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Build outputs
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# Local runtime & database artifacts
+.env
+.env.local
+backend/civicpulse.db
+backend/storage/
+.vercel/
+

@@ -49,18 +49,22 @@ def hamming_distance(hash1: str, hash2: str) -> int:
 def _get_font(size: int):
     """Load default font or scalable font."""
     try:
-        # Try Windows standard fonts if available
+        # Try Windows/Linux standard fonts if available
         font_paths = [
             "C:/Windows/Fonts/segoeui.ttf",
             "C:/Windows/Fonts/arial.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         ]
         for p in font_paths:
             if os.path.exists(p):
                 return ImageFont.truetype(p, size)
     except Exception:
         pass
-    return ImageFont.load_default()
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 def draw_locator_radar(draw: ImageDraw.ImageDraw, box: Tuple[int, int, int, int], accuracy_m: Optional[float] = None):
     """Draw a professional coordinate mini-graphic / radar icon."""
@@ -214,6 +218,10 @@ def process_intake_image(
             pil_img = pil_img.convert("RGB")
             
         dhash = compute_dhash(pil_img)
+
+        Path(settings.ORIGINALS_PATH).mkdir(parents=True, exist_ok=True)
+        Path(settings.THUMBNAILS_PATH).mkdir(parents=True, exist_ok=True)
+        Path(settings.ANNOTATED_PATH).mkdir(parents=True, exist_ok=True)
         
         # Save original unmodified (as clean RGB JPEG)
         orig_filename = f"{incident_number}_orig_{sha256[:12]}.jpg"
